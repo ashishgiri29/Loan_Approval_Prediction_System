@@ -1,14 +1,14 @@
-# LendSafe: Premium Loan Approval Predictor
+# ApprovaAI: Premium Loan Approval Predictor
 
-LendSafe is a professional, state-of-the-art Streamlit web application and machine learning deployment for predicting loan repayment probability and assessing underwriting risk.
+ApprovaAI is a professional, state-of-the-art single-file Streamlit web application and machine learning deployment for predicting loan repayment probability and assessing underwriting risk.
 
-The predictive engine is powered by a **Random Forest Classifier** trained on `loan_dataset_20000.csv`, utilizing class-balancing via SMOTE, categorical encoding, and feature standardization.
+The predictive engine is powered by a **Random Forest Classifier** trained on `loan_dataset_20000.csv`, utilizing class-balancing via SMOTE (applied strictly on training data), categorical label encoding, and feature standardization.
 
 ---
 
 ## 📊 Model Performance Metrics
 
-During evaluation, multiple classification algorithms were trained and validated on the balanced test set. The **Random Forest Classifier** achieved the highest accuracy and ROC-AUC score, making it the selected choice for this deployment:
+During evaluation, multiple classification algorithms were trained and validated. The **Random Forest Classifier** achieved the highest accuracy and ROC-AUC score:
 
 | Metric | Logistic Regression | XGBoost | Random Forest (Selected) |
 | :--- | :---: | :---: | :---: |
@@ -20,14 +20,14 @@ During evaluation, multiple classification algorithms were trained and validated
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure (Single-File Architecture)
 
 ```
 ├── .streamlit/
-│   └── config.toml          # Custom dark mode theme configuration
-├── app.py                   # Main Streamlit dashboard application
-├── train.py                 # Script to preprocess data, train, and save model
-├── model.pkl                # Serialized model, scaler, and label encoders
+│   └── config.toml          # Custom theme configuration
+├── app.py                   # Unified single-file Streamlit application & ML engine
+├── loan_dataset_20000.csv   # Historical underwriting dataset (20,000 records)
+├── model.pkl                # Serialized model, scaler, and label encoders (auto-generated if missing)
 ├── requirements.txt         # Project Python dependencies
 └── README.md                # Project documentation
 ```
@@ -36,7 +36,7 @@ During evaluation, multiple classification algorithms were trained and validated
 
 ## 📋 Features & Inputs Analyzed
 
-The underwriting engine collects and processes 21 distinct applicant data points grouped into four categories:
+The underwriting engine collects and processes 21 distinct applicant data points grouped into four structured categories:
 
 1. **Personal Details:**
    - `age`: Applicant's age in years.
@@ -72,25 +72,18 @@ The underwriting engine collects and processes 21 distinct applicant data points
 ## ⚙️ Setup and Installation
 
 ### 1. Prerequisite Packages
-Make sure you have Python 3.9+ installed. It is highly recommended to run this in a virtual environment.
+Make sure you have Python 3.9+ installed. It is highly recommended to use a virtual environment.
 
 ### 2. Install Dependencies
-Clone or copy this project structure, navigate to the directory in your shell, and run:
+Navigate to the project directory in your terminal and install required libraries:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Train the Model
-To re-generate or train the Random Forest model and create `model.pkl`:
+### 3. Run the Application
+Launch the single-file Streamlit application directly:
 ```bash
-python train.py
-```
-*Note: Make sure `loan_dataset_20000.csv` is present in the specified directory, or update the file path inside `train.py`.*
-
-### 4. Run the Streamlit Dashboard
-Launch the dashboard server locally by running:
-```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-Open the local URL printed in the terminal (usually `http://localhost:8501`) to access the LendSafe interactive interface.
+*Note: If `model.pkl` is present, it will be loaded instantly. If missing or incompatible, `app.py` automatically trains the Random Forest model on `loan_dataset_20000.csv`, saves `model.pkl`, and starts the server.*

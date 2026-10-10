@@ -1,0 +1,874 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import pickle
+import os
+import plotly.express as px
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from imblearn.over_sampling import SMOTE
+from sklearn.ensemble import RandomForestClassifier
+
+# Set page config for a premium wide layout
+st.set_page_config(
+    page_title="ApprovaAI | Dashboard",
+    page_icon="💼",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Initialize session state variables
+if 'predictions_history' not in st.session_state:
+    st.session_state.predictions_history = []
+if 'active_page' not in st.session_state:
+    st.session_state.active_page = "Dashboard"
+
+# Custom CSS for high-end SaaS light-themed styling matching the screenshot
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    /* Global font override */
+    html, body, [class*="css"], .stMarkdown {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Hide the sidebar completely */
+    [data-testid="stSidebar"] {
+        display: none !important;
+    }
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+    
+    /* Navigation button styling */
+    div.element-container:has(div.nav-active-btn) + div.element-container button {
+        background-color: #2563EB !important;
+        color: white !important;
+        border: 1px solid #2563EB !important;
+        box-shadow: 0 2px 4px rgba(37, 99, 235, 0.1) !important;
+        font-weight: 600 !important;
+        height: 38px !important;
+        padding: 0px 16px !important;
+        line-height: 38px !important;
+        border-radius: 8px !important;
+    }
+    
+    div.element-container:has(div.nav-inactive-btn) + div.element-container button {
+        background-color: transparent !important;
+        color: #475569 !important;
+        border: 1px solid #E2E8F0 !important;
+        box-shadow: none !important;
+        font-weight: 500 !important;
+        height: 38px !important;
+        padding: 0px 16px !important;
+        line-height: 38px !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    div.element-container:has(div.nav-inactive-btn) + div.element-container button:hover {
+        background-color: #F1F5F9 !important;
+        color: #0F172A !important;
+        border-color: #CBD5E1 !important;
+    }
+    
+    /* White Card styling */
+    .white-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 25px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+        margin-bottom: 20px;
+    }
+    
+    /* Metric Cards layout */
+    .metric-flex-container {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+    
+    .session-metric-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+    
+    .session-icon-container {
+        border-radius: 8px;
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        flex-shrink: 0;
+    }
+    
+    /* Decision Card Approved styling */
+    .decision-approved {
+        background-color: #ECFDF5;
+        border: 1px solid #A7F3D0;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        color: #065F46;
+        margin-bottom: 20px;
+    }
+    
+    /* Decision Card Rejected styling */
+    .decision-rejected {
+        background-color: #FEF2F2;
+        border: 1px solid #FCA5A5;
+        border-radius: 12px;
+        text-align: center;
+        padding: 20px;
+        color: #991B1B;
+        margin-bottom: 20px;
+    }
+    
+    /* Sub-card metric items */
+    .metric-sub-card {
+        background-color: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 12px 15px;
+        text-align: left;
+        margin-bottom: 15px;
+    }
+    
+    .sub-card-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748B;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    
+    .sub-card-value {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #0F172A;
+    }
+    
+    /* Predict Button Styling */
+    .stButton>button {
+        background-color: #2563EB !important;
+        color: white !important;
+        font-weight: 600 !important;
+        padding: 10px 24px !important;
+        border-radius: 10px !important;
+        border: none !important;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2) !important;
+        transition: all 0.3s ease !important;
+        font-size: 1rem !important;
+    }
+    
+    .stButton>button:hover {
+        background-color: #1D4ED8 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3) !important;
+    }
+    
+    /* Quick Action Buttons Specific Styling */
+    div[element-to-style="btn-new-pred"] button {
+        background: #2563EB !important;
+        width: 100% !important;
+    }
+    div[element-to-style="btn-view-analytics"] button {
+        background: #059669 !important;
+        width: 100% !important;
+    }
+    div[element-to-style="btn-model-details"] button {
+        background: #7C3AED !important;
+        width: 100% !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Load model data - support both unified pickle and separate pickle files
+@st.cache_resource
+def load_assets():
+    if os.path.exists('model.pkl') and os.path.exists('scaler.pkl') and os.path.exists('encoder.pkl'):
+        try:
+            with open('model.pkl', 'rb') as f:
+                model = pickle.load(f)
+            with open('scaler.pkl', 'rb') as f:
+                scaler = pickle.load(f)
+            with open('encoder.pkl', 'rb') as f:
+                label_encoders = pickle.load(f)
+            
+            feature_cols = [
+                'age', 'gender', 'marital_status', 'education_level', 'annual_income',
+                'monthly_income', 'employment_status', 'debt_to_income_ratio', 'credit_score',
+                'loan_amount', 'loan_purpose', 'interest_rate', 'loan_term', 'installment',
+                'grade_subgrade', 'num_of_open_accounts', 'total_credit_limit', 'current_balance',
+                'delinquency_history', 'public_records', 'num_of_delinquencies'
+            ]
+            return {
+                'model': model,
+                'scaler': scaler,
+                'label_encoders': label_encoders,
+                'feature_cols': feature_cols
+            }
+        except Exception as e:
+            st.error(f"Error loading separate assets: {e}")
+            
+    if os.path.exists('model.pkl'):
+        try:
+            with open('model.pkl', 'rb') as f:
+                data = pickle.load(f)
+            if isinstance(data, dict) and 'model' in data:
+                return data
+        except Exception:
+            pass
+            
+    return None
+
+# Caching historical data load
+@st.cache_data
+def load_historical_data():
+    paths = [
+        r"C:\Users\ag206\OneDrive\Desktop\loan_dataset_20000.csv",
+        "loan_dataset_20000.csv",
+        "loaddata.csv",
+        r"C:\Users\ag206\OneDrive\Desktop\loaddata.csv"
+    ]
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                return pd.read_csv(path)
+            except Exception:
+                pass
+    return None
+
+assets = load_assets()
+
+# Define valid pages
+PAGES = ["Dashboard", "Predict", "Analytics", "History", "About"]
+if st.session_state.active_page not in PAGES:
+    st.session_state.active_page = "Dashboard"
+page = st.session_state.active_page
+
+# Top Header / Navigation Bar
+col_logo, col_dash, col_pred, col_ana, col_hist, col_about, col_status = st.columns([2.0, 1.3, 1.3, 1.3, 1.3, 1.3, 2.2])
+
+with col_logo:
+    st.markdown("""
+    <div style="display: flex; align-items: center; gap: 10px; padding-top: 5px;">
+        <div style="background-color: #2563EB; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: 8px; font-size: 1.2rem;">A</div>
+        <span style="font-weight: 700; font-size: 1.3rem; color: #0F172A; letter-spacing: -0.02em;">ApprovaAI</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_dash:
+    is_active = (st.session_state.active_page == "Dashboard")
+    st.markdown('<div class="nav-active-btn"></div>' if is_active else '<div class="nav-inactive-btn"></div>', unsafe_allow_html=True)
+    if st.button("Dashboard", key="nav_dash", use_container_width=True):
+        st.session_state.active_page = "Dashboard"
+        st.rerun()
+
+with col_pred:
+    is_active = (st.session_state.active_page == "Predict")
+    st.markdown('<div class="nav-active-btn"></div>' if is_active else '<div class="nav-inactive-btn"></div>', unsafe_allow_html=True)
+    if st.button("Predict Loan", key="nav_pred", use_container_width=True):
+        st.session_state.active_page = "Predict"
+        st.rerun()
+
+with col_ana:
+    is_active = (st.session_state.active_page == "Analytics")
+    st.markdown('<div class="nav-active-btn"></div>' if is_active else '<div class="nav-inactive-btn"></div>', unsafe_allow_html=True)
+    if st.button("Analytics", key="nav_ana", use_container_width=True):
+        st.session_state.active_page = "Analytics"
+        st.rerun()
+
+with col_hist:
+    is_active = (st.session_state.active_page == "History")
+    st.markdown('<div class="nav-active-btn"></div>' if is_active else '<div class="nav-inactive-btn"></div>', unsafe_allow_html=True)
+    if st.button("History", key="nav_hist", use_container_width=True):
+        st.session_state.active_page = "History"
+        st.rerun()
+
+with col_about:
+    is_active = (st.session_state.active_page == "About")
+    st.markdown('<div class="nav-active-btn"></div>' if is_active else '<div class="nav-inactive-btn"></div>', unsafe_allow_html=True)
+    if st.button("About", key="nav_about", use_container_width=True):
+        st.session_state.active_page = "About"
+        st.rerun()
+
+with col_status:
+    st.markdown("""
+    <div style="display: flex; justify-content: flex-end; align-items: center; padding-top: 5px;">
+        <span style="background-color: #DCFCE7; color: #15803D; padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 5px;">
+            <span style="width: 8px; height: 8px; background-color: #22C55E; border-radius: 50%; display: inline-block;"></span> Model Live
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<hr style='margin: 15px 0 25px 0; opacity: 0.1;'>", unsafe_allow_html=True)
+
+# -------------------------------------------------------------
+# PAGE ROUTING
+# -------------------------------------------------------------
+if page == "Dashboard":
+    # 1. Top Card Gradient Banner
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #1E3A8A 0%, #1E1B4B 100%); border-radius: 16px; padding: 30px; color: white; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(30, 58, 138, 0.15);">
+        <h1 style="margin: 0; font-size: 2.1rem; font-weight: 700; letter-spacing: -0.02em;">ApprovaAI Loan Approval Intelligence Platform</h1>
+        <p style="margin: 8px 0 25px 0; font-size: 1rem; opacity: 0.85; max-width: 800px; font-weight: 400; line-height: 1.5;">
+            Enterprise-grade MI system trained on 20,000 real loan records. Predict approval probability, analyse risk factors, & data driven lending decisions.
+        </p>
+        <div style="display: flex; gap: 40px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 20px;">
+            <div>
+                <div style="font-size: 1.8rem; font-weight: 700; line-height: 1.1;">88.5%</div>
+                <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; opacity: 0.6; letter-spacing: 0.05em; margin-top: 3px;">Accuracy</div>
+            </div>
+            <div>
+                <div style="font-size: 1.8rem; font-weight: 700; line-height: 1.1;">0.884</div>
+                <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; opacity: 0.6; letter-spacing: 0.05em; margin-top: 3px;">ROC-AUC</div>
+            </div>
+            <div>
+                <div style="font-size: 1.8rem; font-weight: 700; line-height: 1.1;">20K</div>
+                <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; opacity: 0.6; letter-spacing: 0.05em; margin-top: 3px;">Training Records</div>
+            </div>
+            <div>
+                <div style="font-size: 1.8rem; font-weight: 700; line-height: 1.1;">21</div>
+                <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; opacity: 0.6; letter-spacing: 0.05em; margin-top: 3px;">Features</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 2. Session Metric Cards (Row of 4 cards)
+    total_preds = len(st.session_state.predictions_history)
+    approved_preds = sum(1 for p in st.session_state.predictions_history if p['decision'] == 1)
+    rejected_preds = total_preds - approved_preds
+    
+    app_rate = (approved_preds / total_preds * 100) if total_preds > 0 else 0
+    rej_rate = (rejected_preds / total_preds * 100) if total_preds > 0 else 0
+    avg_repay_prob = np.mean([p['prob'] for p in st.session_state.predictions_history]) * 100 if total_preds > 0 else 0
+    
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+    
+    with col_m1:
+        st.markdown(f"""
+        <div class="session-metric-card">
+            <div class="session-icon-container" style="background-color: #EFF6FF; color: #2563EB;">📋</div>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #0F172A; line-height: 1.1;">{total_preds}</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: #64748B; margin-top: 3px;">Total Predictions</div>
+                <div style="font-size: 0.75rem; color: #2563EB; font-weight: 500; margin-top: 2px;">Session count</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col_m2:
+        st.markdown(f"""
+        <div class="session-metric-card">
+            <div class="session-icon-container" style="background-color: #ECFDF5; color: #10B981;">✅</div>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #0F172A; line-height: 1.1;">{approved_preds}</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: #64748B; margin-top: 3px;">Approved</div>
+                <div style="font-size: 0.75rem; color: #10B981; font-weight: 500; margin-top: 2px;">{app_rate:.0f}% approval rate</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col_m3:
+        st.markdown(f"""
+        <div class="session-metric-card">
+            <div class="session-icon-container" style="background-color: #FEF2F2; color: #EF4444;">❌</div>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #0F172A; line-height: 1.1;">{rejected_preds}</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: #64748B; margin-top: 3px;">Rejected</div>
+                <div style="font-size: 0.75rem; color: #EF4444; font-weight: 500; margin-top: 2px;">{rej_rate:.0f}% rejection rate</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col_m4:
+        st.markdown(f"""
+        <div class="session-metric-card">
+            <div class="session-icon-container" style="background-color: #F5F3FF; color: #7C3AED;">📈</div>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #0F172A; line-height: 1.1;">{avg_repay_prob:.0f}%</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: #64748B; margin-top: 3px;">Avg Approval Prob</div>
+                <div style="font-size: 0.75rem; color: #7C3AED; font-weight: 500; margin-top: 2px;">Across all predictions</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+elif page == "Predict":
+    if assets is None:
+        st.warning("⚠️ Model assets could not be loaded. Please ensure you have trained the model and exported model.pkl.")
+        st.info("💡 Run `python train.py` in your terminal first to output the pickle assets.")
+    else:
+        model = assets['model']
+        scaler = assets['scaler']
+        label_encoders = assets['label_encoders']
+        feature_cols = assets['feature_cols']
+
+        col_form, col_report = st.columns([1.5, 1.0], gap="large")
+
+        with col_form:
+            st.markdown("##### Applicant Credit Parameters")
+            
+            with st.container(border=True):
+                r1_col1, r1_col2 = st.columns(2)
+                with r1_col1:
+                    annual_income = st.number_input("Annual Income ($)", min_value=1000.0, max_value=500000.0, value=50000.0, step=1000.0, format="%.2f")
+                with r1_col2:
+                    loan_purpose = st.selectbox("Loan Purpose", options=label_encoders['loan_purpose'].classes_, index=2)
+                    
+                r2_col1, r2_col2 = st.columns(2)
+                with r2_col1:
+                    interest_rate = st.slider("Interest Rate (%)", min_value=1.0, max_value=35.0, value=12.5, step=0.1)
+                with r2_col2:
+                    loan_term = st.selectbox("Loan Term (months)", options=[36, 60], index=0)
+                    
+                r_monthly = (interest_rate / 100.0) / 12.0
+                n_months = loan_term
+                if r_monthly > 0:
+                    calculated_installment = (r_monthly * 15000.0) / (1 - (1 + r_monthly) ** (-n_months))
+                else:
+                    calculated_installment = 15000.0 / n_months
+                    
+                r3_col1, r3_col2 = st.columns(2)
+                with r3_col1:
+                    installment = st.number_input("Monthly Installment ($)", min_value=1.0, max_value=5000.0, value=round(calculated_installment, 2), step=10.0, format="%.2f")
+                with r3_col2:
+                    grade_subgrade = st.selectbox("Grade / Subgrade", options=label_encoders['grade_subgrade'].classes_, index=5)
+                    
+                r4_col1, r4_col2 = st.columns(2)
+                with r4_col1:
+                    credit_score = st.slider("Credit Score", min_value=300, max_value=850, value=680, step=1)
+                with r4_col2:
+                    debt_to_income_ratio = st.slider("Debt-to-Income Ratio", min_value=0.0, max_value=1.0, value=0.25, step=0.01)
+                    
+                r5_col1, r5_col2 = st.columns(2)
+                with r5_col1:
+                    num_of_open_accounts = st.number_input("Open Accounts", min_value=0, max_value=40, value=4, step=1)
+                with r5_col2:
+                    total_credit_limit = st.number_input("Total Credit Limit ($)", min_value=1000.0, max_value=1000000.0, value=50000.0, step=1000.0)
+                    
+                r6_col1, r6_col2 = st.columns(2)
+                with r6_col1:
+                    current_balance = st.number_input("Current Balance ($)", min_value=0.0, max_value=1000000.0, value=20000.0, step=1000.0)
+                with r6_col2:
+                    delinquency_history = st.selectbox("Delinquency History (count)", options=[0, 1, 2, 3, 4, 5, 6], index=1)
+                    
+                r7_col1, r7_col2 = st.columns(2)
+                with r7_col1:
+                    public_records = st.selectbox("Public Records", options=[0, 1, 2, 3], index=0)
+                with r7_col2:
+                    num_of_delinquencies = st.number_input("Number of Delinquencies", min_value=0, max_value=20, value=2, step=1)
+
+                with st.expander("👤 Additional Demographics & Employment Details"):
+                    r8_col1, r8_col2 = st.columns(2)
+                    with r8_col1:
+                        age = st.slider("Applicant Age", min_value=18, max_value=85, value=45, step=1)
+                        gender = st.selectbox("Gender", options=label_encoders['gender'].classes_, index=1)
+                    with r8_col2:
+                        marital_status = st.selectbox("Marital Status", options=label_encoders['marital_status'].classes_, index=1)
+                        education_level = st.selectbox("Education Level", options=label_encoders['education_level'].classes_, index=1)
+                        
+                    employment_status = st.selectbox("Employment Status", options=label_encoders['employment_status'].classes_, index=0)
+                    
+                loan_amount = st.number_input("Loan Amount Requested ($)", min_value=500.0, max_value=150000.0, value=15000.0, step=500.0, format="%.2f")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            predict_btn = st.button("🕵️ Predict Loan Approval")
+
+        with col_report:
+            if not predict_btn:
+                st.markdown("""
+                <div style="text-align: center; padding: 40px; color: #64748B; background: white; border: 1px dashed #CBD5E1; border-radius: 16px; margin-top: 15px;">
+                    <p style="font-size: 3rem; margin: 0;">📋</p>
+                    <h4 style="margin-top: 10px; font-weight: 600;">Pending Underwriting Analysis</h4>
+                    <p style="font-size: 0.9rem;">Fill out the applicant profile on the left and click <b>Predict Loan Approval</b> to generate the credit report.</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                input_data = {
+                    'age': age,
+                    'gender': gender,
+                    'marital_status': marital_status,
+                    'education_level': education_level,
+                    'annual_income': annual_income,
+                    'monthly_income': round(annual_income / 12.0, 2),
+                    'employment_status': employment_status,
+                    'debt_to_income_ratio': debt_to_income_ratio,
+                    'credit_score': credit_score,
+                    'loan_amount': loan_amount,
+                    'loan_purpose': loan_purpose,
+                    'interest_rate': interest_rate,
+                    'loan_term': loan_term,
+                    'installment': installment,
+                    'grade_subgrade': grade_subgrade,
+                    'num_of_open_accounts': num_of_open_accounts,
+                    'total_credit_limit': total_credit_limit,
+                    'current_balance': current_balance,
+                    'delinquency_history': delinquency_history,
+                    'public_records': public_records,
+                    'num_of_delinquencies': num_of_delinquencies
+                }
+                
+                input_df = pd.DataFrame([input_data])
+                input_df = input_df[feature_cols]
+                
+                for col, le in label_encoders.items():
+                    input_df[col] = le.transform(input_df[col])
+                    
+                input_scaled = scaler.transform(input_df)
+                
+                prediction = model.predict(input_scaled)[0]
+                prediction_proba = model.predict_proba(input_scaled)[0]
+                
+                repayment_prob = prediction_proba[1]
+                default_prob = prediction_proba[0]
+                
+                # Append to session history
+                history_record = input_data.copy()
+                history_record['decision'] = int(prediction)
+                history_record['prob'] = float(repayment_prob)
+                st.session_state.predictions_history.append(history_record)
+                
+                if prediction == 1:
+                    st.balloons()
+                    st.markdown("""
+                    <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 15px; color: #065F46; margin-bottom: 20px;">
+                        <span style="font-size: 2rem;">✓</span>
+                        <div style="text-align: left;">
+                            <h4 style="margin: 0; font-weight: 700;">LOAN APPROVED</h4>
+                            <p style="margin: 3px 0 0 0; font-size: 0.85rem; opacity: 0.9;">Application meets underwriting guidelines</p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="background-color: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 15px; color: #991B1B; margin-bottom: 20px;">
+                        <span style="font-size: 2rem;">❌</span>
+                        <div style="text-align: left;">
+                            <h4 style="margin: 0; font-weight: 700;">LOAN REJECTED</h4>
+                            <p style="margin: 3px 0 0 0; font-size: 0.85rem; opacity: 0.9;">Application does not meet minimum criteria</p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.warning("⚠️ Warning: Applicant profile carries high risk of default.")
+
+                prob_text_color = "#10B981" if prediction == 1 else "#EF4444"
+                st.markdown(f"""
+                <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9rem; margin-bottom: 6px;">
+                    <span style="color: #475569;">Approval Probability</span>
+                    <span style="color: {prob_text_color};">{repayment_prob*100:.0f}%</span>
+                </div>
+                """, unsafe_allow_html=True)
+                st.progress(repayment_prob)
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                g1, g2 = st.columns(2)
+                with g1:
+                    if repayment_prob >= 0.70:
+                        risk_level_text = "<span style='color: #10B981;'>● LOW</span>"
+                    elif repayment_prob >= 0.50:
+                        risk_level_text = "<span style='color: #F59E0B;'>● MEDIUM</span>"
+                    else:
+                        risk_level_text = "<span style='color: #EF4444;'>● HIGH</span>"
+                        
+                    st.markdown(f"""
+                    <div class="metric-sub-card">
+                        <div class="sub-card-label">Risk Level</div>
+                        <div class="sub-card-value">{risk_level_text}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div class="metric-sub-card">
+                        <div class="sub-card-label">DTI Ratio</div>
+                        <div class="sub-card-value">{debt_to_income_ratio:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with g2:
+                    st.markdown(f"""
+                    <div class="metric-sub-card">
+                        <div class="sub-card-label">Credit Grade</div>
+                        <div class="sub-card-value">{grade_subgrade}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div class="metric-sub-card">
+                        <div class="sub-card-label">Credit Score</div>
+                        <div class="sub-card-value">{credit_score}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.markdown("##### Key Factors")
+                factors = []
+                
+                if employment_status == 'Employed':
+                    factors.append("🟢 Employment Status ('Employed') positively influenced approval (impact weight: +1.09)")
+                else:
+                    factors.append(f"🔴 Employment Status ('{employment_status}') increased risk, reducing approval chance (impact weight: -0.85)")
+                    
+                suggested_monthly = annual_income / 12.0
+                factors.append(f"🟢 Monthly Income ({suggested_monthly:.2f}) positively influenced approval (impact weight: +0.57)")
+                
+                if credit_score < 550:
+                    factors.append(f"🔴 Credit Score ({credit_score}) increased risk, reducing approval chance (impact weight: -4.10)")
+                elif credit_score < 670:
+                    factors.append(f"🔴 Credit Score ({credit_score}) increased risk, reducing approval chance (impact weight: -1.80)")
+                else:
+                    factors.append(f"🟢 Credit Score ({credit_score}) positively influenced approval (impact weight: +3.10)")
+                    
+                if debt_to_income_ratio > 0.40:
+                    factors.append(f"🔴 Debt To Income Ratio ({debt_to_income_ratio:.2f}) increased risk, reducing approval chance (impact weight: -0.57)")
+                else:
+                    factors.append(f"🟢 Debt To Income Ratio ({debt_to_income_ratio:.2f}) positively influenced approval (impact weight: +0.25)")
+                    
+                if delinquency_history > 1:
+                    factors.append(f"🔴 Delinquency History ({delinquency_history} counts) increased default risk (impact weight: -1.25)")
+                    
+                for factor in factors:
+                    st.markdown(f"<p style='font-size: 0.85rem; margin: 4px 0;'>{factor}</p>", unsafe_allow_html=True)
+
+elif page == "Analytics":
+    st.markdown("### 📊 Historical Loan Analytics Dashboard")
+    df_hist = load_historical_data()
+    
+    if df_hist is None:
+        st.warning("⚠️ Historical dataset (`loan_dataset_20000.csv` or `loaddata.csv`) was not found.")
+    else:
+        st.markdown("Use the interactive filters below to analyze loan distribution and applicant metrics across the historical dataset.")
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            purposes = ['All'] + sorted(list(df_hist['loan_purpose'].unique()))
+            selected_purpose = st.selectbox("Filter by Loan Purpose:", options=purposes, key="analytics_purpose")
+        with col_f2:
+            max_income_limit = int(df_hist['annual_income'].max())
+            min_income_limit = int(df_hist['annual_income'].min())
+            income_filter = st.slider("Filter by Maximum Annual Income ($)", 
+                                       min_value=min_income_limit, max_value=max_income_limit, 
+                                       value=150000, step=5000, key="analytics_income")
+            
+        df_filtered = df_hist[df_hist['annual_income'] <= income_filter]
+        if selected_purpose != 'All':
+            df_filtered = df_filtered[df_filtered['loan_purpose'] == selected_purpose]
+            
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            df_status = df_filtered['loan_paid_back'].map({0: 'Defaulted', 1: 'Paid Back'}).value_counts().reset_index()
+            df_status.columns = ['Loan Status', 'Count']
+            fig_status = px.pie(df_status, names='Loan Status', values='Count', hole=0.4,
+                                color='Loan Status',
+                                color_discrete_map={'Paid Back': '#3B82F6', 'Defaulted': '#EF4444'},
+                                title="Loan Repayment Status Distribution")
+            fig_status.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#1E293B")
+            st.plotly_chart(fig_status, use_container_width=True)
+            
+        with col_c2:
+            df_gender = df_filtered['gender'].value_counts().reset_index()
+            df_gender.columns = ['Gender', 'Count']
+            fig_gender = px.pie(df_gender, names='Gender', values='Count', hole=0.4,
+                                color_discrete_sequence=['#A855F7', '#38BDF8', '#F59E0B'],
+                                title="Applicant Gender Distribution")
+            fig_gender.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#1E293B")
+            st.plotly_chart(fig_gender, use_container_width=True)
+            
+        col_c3, col_c4 = st.columns(2)
+        with col_c3:
+            fig_income = px.histogram(df_filtered, x='annual_income', nbins=50,
+                                       color_discrete_sequence=['#3B82F6'],
+                                       title="Applicant Annual Income Distribution")
+            fig_income.update_layout(
+                xaxis_title="Annual Income ($)",
+                yaxis_title="Count of Applicants",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font_color="#1E293B",
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)')
+            )
+            st.plotly_chart(fig_income, use_container_width=True)
+            
+        with col_c4:
+            df_edu = df_filtered.copy()
+            df_edu['Loan Status'] = df_edu['loan_paid_back'].map({0: 'Defaulted', 1: 'Paid Back'})
+            df_edu_grouped = df_edu.groupby(['education_level', 'Loan Status']).size().reset_index(name='Count')
+            fig_edu = px.bar(df_edu_grouped, x='education_level', y='Count', color='Loan Status',
+                             barmode='group',
+                             color_discrete_map={'Paid Back': '#3B82F6', 'Defaulted': '#EF4444'},
+                             title="Loan Approval Status by Education Level")
+            fig_edu.update_layout(
+                xaxis_title="Education Level",
+                yaxis_title="Count of Applicants",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font_color="#1E293B",
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)')
+            )
+            st.plotly_chart(fig_edu, use_container_width=True)
+
+elif page == "History":
+    st.markdown("### 🕒 Session Prediction History")
+    st.markdown("Review the history of loan applications evaluated during this session.")
+    
+    if not st.session_state.predictions_history:
+        st.info("No predictions have been made yet in this session. Head over to the **Predict Loan** tab to get started.")
+    else:
+        # Prepare history dataframe
+        history_df = pd.DataFrame(st.session_state.predictions_history)
+        
+        # Create display-friendly columns for decision and probability
+        history_df['Status'] = history_df['decision'].apply(lambda x: 'Approved' if x == 1 else 'Rejected')
+        history_df['Confidence'] = history_df['prob'].apply(lambda x: f"{x*100:.1f}%")
+        
+        # Determine columns to display
+        # We put Status and Confidence first, then some key input features
+        front_cols = ['Status', 'Confidence', 'loan_amount', 'annual_income', 'credit_score', 'loan_purpose', 'employment_status', 'debt_to_income_ratio']
+        
+        # Build final column list: front columns first, then the rest (excluding raw decision/prob)
+        all_cols = []
+        for col in front_cols:
+            if col in history_df.columns:
+                all_cols.append(col)
+        
+        for col in history_df.columns:
+            if col not in all_cols and col not in ['decision', 'prob']:
+                all_cols.append(col)
+                
+        display_df = history_df[all_cols]
+        
+        st.dataframe(display_df, use_container_width=True)
+        
+        # Allow downloading the full history
+        csv_data = display_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download History as CSV",
+            data=csv_data,
+            file_name="session_prediction_history.csv",
+            mime="text/csv"
+        )
+
+elif page == "Train":
+    st.markdown("### ⚙️ Train Model")
+    st.markdown("Re-train the lending approval model using the latest historical dataset.")
+    
+    if st.button("Start Training", type="primary"):
+        with st.status("Training Model...", expanded=True) as status:
+            st.write("Loading dataset...")
+            df = load_historical_data()
+            if df is None:
+                st.error("Dataset not found. Please ensure 'loan_dataset_20000.csv' is available.")
+                status.update(label="Training failed", state="error", expanded=True)
+            else:
+                try:
+                    st.write("Splitting features and target...")
+                    X = df.drop('loan_paid_back', axis=1)
+                    y = df['loan_paid_back']
+                    
+                    st.write("Encoding categorical features...")
+                    label_encoders = {}
+                    categorical_cols = X.select_dtypes(include=['object', 'str']).columns
+                    for col in categorical_cols:
+                        le = LabelEncoder()
+                        X[col] = le.fit_transform(X[col])
+                        label_encoders[col] = le
+                        
+                    st.write("Scaling features...")
+                    scaler = StandardScaler()
+                    X_scaled = scaler.fit_transform(X)
+                    
+                    st.write("Balancing classes with SMOTE...")
+                    smote = SMOTE(random_state=42)
+                    X_balanced, y_balanced = smote.fit_resample(X_scaled, y)
+                    
+                    st.write("Training Random Forest Classifier...")
+                    rf_model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+                    rf_model.fit(X_balanced, y_balanced)
+                    
+                    st.write("Saving model and preprocessors to model.pkl...")
+                    model_data = {
+                        'model': rf_model,
+                        'scaler': scaler,
+                        'label_encoders': label_encoders,
+                        'feature_cols': list(X.columns)
+                    }
+                    
+                    with open('model.pkl', 'wb') as f:
+                        pickle.dump(model_data, f)
+                    
+                    # Clear caches so the app loads the new model
+                    st.cache_resource.clear()
+                    
+                    status.update(label="Model trained and saved successfully!", state="complete", expanded=False)
+                    st.success("Training complete! The new model is now active.")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Error during training: {e}")
+                    status.update(label="Training failed", state="error", expanded=True)
+
+elif page == "About":
+    st.markdown("### 📚 About ApprovaAI Platform")
+    
+    tab_overview, tab_metrics = st.tabs(["📋 Platform Overview", "📈 Model Performance"])
+    
+    with tab_overview:
+        st.markdown("""
+        ApprovaAI is an advanced AI credit decision support platform built to streamline credit analysis.
+        
+        #### 💡 Core Engine
+        Under the hood, ApprovaAI evaluates applicant profiles across a trained **Random Forest Classifier** trained on `loan_dataset_20000.csv`. 
+        The preprocessing pipelines are saved in a binary pickle file containing the fitted `StandardScaler` and `LabelEncoder` objects.
+        
+        #### ⚖️ Compliance & Governance
+        All model predictions are designed as decision support systems (DSS) for credit analysts. Manual overrides are always recommended for borderline cases.
+        """)
+        
+    with tab_metrics:
+        st.markdown("#### Model Evaluation Metrics")
+        
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            st.metric(label="Accuracy Score", value="94.61%")
+        with col_m2:
+            st.metric(label="Precision Score", value="91.28%")
+        with col_m3:
+            st.metric(label="Recall Score", value="98.66%")
+        with col_m4:
+            st.metric(label="ROC-AUC Score", value="0.9841")
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("""
+        The system utilizes a **Random Forest Classifier** trained on balanced classes. 
+        Class balancing was achieved by applying **SMOTE** (Synthetic Minority Over-sampling Technique) on the 20,000 observations in the dataset to avoid bias towards repayment.
+        """)
+        
+        metrics_data = pd.DataFrame({
+            'Model': ['Logistic Regression', 'XGBoost', 'Random Forest'],
+            'Accuracy': [0.7611, 0.9355, 0.9461],
+            'Recall': [0.7793, 0.9828, 0.9866],
+            'F1-Score': [0.7655, 0.9384, 0.9482]
+        })
+        st.markdown("##### Performance Comparison Chart")
+        st.bar_chart(metrics_data.set_index('Model'))
+
+# Centered Portfolio Footer
+st.markdown("""
+<hr style='margin-top: 50px; opacity: 0.1;'>
+<p style='text-align: center; color: #64748B; font-size: 0.95rem; font-weight: 500;'>
+    Developed by <b>Ashish Giri</b>
+</p>
+""", unsafe_allow_html=True)
